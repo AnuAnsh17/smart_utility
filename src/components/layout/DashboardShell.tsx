@@ -10,6 +10,8 @@ interface DashboardShellProps {
   children: React.ReactNode;
   location?: string;
   tempC?: number;
+  isDemoMode?: boolean;
+  onExitDemo?: () => void;
 }
 
 export const DashboardShell: React.FC<DashboardShellProps> = ({
@@ -18,6 +20,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   children,
   location,
   tempC,
+  isDemoMode = false,
+  onExitDemo,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -35,6 +39,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           location={location}
           tempC={tempC}
+          isDemoMode={isDemoMode}
+          onExitDemo={onExitDemo}
         />
 
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">

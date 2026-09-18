@@ -7,7 +7,7 @@ export interface AnalysisPipelineStep {
   detail?: string;
 }
 
-export type AppStage = 'landing' | 'processing' | 'complete' | 'dashboard';
+export type AppStage = 'landing' | 'processing' | 'complete' | 'preparing_demo' | 'dashboard';
 
 export interface AnalysisResult {
   bill: import('./bill').BillData;

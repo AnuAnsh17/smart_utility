@@ -7,6 +7,7 @@ import { UploadedBillFile } from '@/types/bill';
 import { DashboardTab } from '@/components/layout/Sidebar';
 import { LandingPage } from '@/components/upload/LandingPage';
 import { ProcessingScreen } from '@/components/processing/ProcessingScreen';
+import { PreparingSampleScreen } from '@/components/processing/PreparingSampleScreen';
 import { AnalysisComplete } from '@/components/processing/AnalysisComplete';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
@@ -22,13 +23,14 @@ import { SavingsPage } from '@/components/insights/SavingsPage';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
 import { DocumentsView } from '@/components/documents/DocumentsView';
 import { BillDetailsModal } from '@/components/documents/BillDetailsModal';
-import { MOCK_ANALYSIS_RESULT } from '@/services/analysisService';
+import { analysisService, MOCK_ANALYSIS_RESULT } from '@/services/analysisService';
 
 export default function Home() {
   const [stage, setStage] = useState<AppStage>('landing');
   const [activeTab, setActiveTab] = useState<DashboardTab>('dashboard');
   const [selectedFile, setSelectedFile] = useState<UploadedBillFile | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult>(MOCK_ANALYSIS_RESULT);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
 
   // File Upload Handlers
@@ -45,10 +47,12 @@ export default function Home() {
       isSample: true,
     };
     setSelectedFile(sampleFile);
+    setIsDemoMode(false);
     setStage('processing');
   };
 
   const handleStartAnalysis = () => {
+    setIsDemoMode(false);
     setStage('processing');
   };
 
@@ -56,9 +60,27 @@ export default function Home() {
     setStage('complete');
   };
 
+  const handleExploreSampleDashboard = async () => {
+    setIsDemoMode(true);
+    const demoData = await analysisService.getSampleAnalysis();
+    setAnalysisResult(demoData);
+    setStage('preparing_demo');
+  };
+
+  const handleSamplePrepComplete = () => {
+    setStage('dashboard');
+    setActiveTab('dashboard');
+  };
+
   const handleOpenDashboard = () => {
     setStage('dashboard');
     setActiveTab('dashboard');
+  };
+
+  const handleExitDemo = () => {
+    setIsDemoMode(false);
+    setSelectedFile(null);
+    setStage('landing');
   };
 
   const handleQuickAction = (key: string) => {
@@ -85,18 +107,28 @@ export default function Home() {
               onStartAnalysis={handleStartAnalysis}
               selectedFile={selectedFile}
               onClearFile={() => setSelectedFile(null)}
+              isDemoMode={isDemoMode}
+              onToggleDemoMode={setIsDemoMode}
+              onExploreSampleDashboard={handleExploreSampleDashboard}
             />
           </motion.div>
         )}
 
-        {/* STAGE 2: PROCESSING SCREEN */}
+        {/* STAGE 2: PROCESSING SCREEN (Real Upload / Sample Bill) */}
         {stage === 'processing' && (
           <motion.div key="processing-stage">
             <ProcessingScreen onComplete={handleProcessingComplete} />
           </motion.div>
         )}
 
-        {/* STAGE 3: ANALYSIS COMPLETE */}
+        {/* STAGE 3: DEMO PREPARATION TRANSITION */}
+        {stage === 'preparing_demo' && (
+          <motion.div key="demo-prep-stage">
+            <PreparingSampleScreen onComplete={handleSamplePrepComplete} />
+          </motion.div>
+        )}
+
+        {/* STAGE 4: ANALYSIS COMPLETE */}
         {stage === 'complete' && (
           <motion.div key="complete-stage">
             <AnalysisComplete
@@ -106,7 +138,7 @@ export default function Home() {
           </motion.div>
         )}
 
-        {/* STAGE 4: MAIN ANALYTICS DASHBOARD */}
+        {/* STAGE 5: MAIN ANALYTICS DASHBOARD (Used by both Real & Demo Mode) */}
         {stage === 'dashboard' && (
           <motion.div
             key="dashboard-stage"
@@ -118,14 +150,15 @@ export default function Home() {
               activeTab={activeTab}
               onSelectTab={(tab) => {
                 if (tab === 'analyze') {
-                  setStage('landing');
-                  setSelectedFile(null);
+                  handleExitDemo();
                 } else {
                   setActiveTab(tab);
                 }
               }}
               location={analysisResult.weather.location}
               tempC={analysisResult.weather.tempC}
+              isDemoMode={isDemoMode}
+              onExitDemo={handleExitDemo}
             >
               {/* TAB 1: DASHBOARD OVERVIEW */}
               {activeTab === 'dashboard' && (
@@ -214,10 +247,7 @@ export default function Home() {
               {activeTab === 'documents' && (
                 <DocumentsView
                   onViewBillDetails={() => setShowBillModal(true)}
-                  onUploadNewBill={() => {
-                    setStage('landing');
-                    setSelectedFile(null);
-                  }}
+                  onUploadNewBill={handleExitDemo}
                 />
               )}
             </DashboardShell>
