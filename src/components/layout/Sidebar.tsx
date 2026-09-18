@@ -9,7 +9,7 @@ import {
   TrendingUp,
   PiggyBank,
   MessageSquare,
-  FolderText,
+  Folder,
   Settings,
   HelpCircle,
   X,
@@ -44,7 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'forecast', label: 'Forecast', icon: TrendingUp },
     { id: 'savings', label: 'Savings', icon: PiggyBank },
     { id: 'assistant', label: 'Ask Assistant', icon: MessageSquare },
-    { id: 'documents', label: 'Documents', icon: FolderText },
+    { id: 'documents', label: 'Documents', icon: Folder },
   ] as const;
 
   const bottomItems = [
