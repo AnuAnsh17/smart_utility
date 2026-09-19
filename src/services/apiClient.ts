@@ -114,7 +114,10 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function uploadBill(file: File): Promise<UploadAccepted> {
+export async function uploadBill(
+  file: File,
+  signal?: AbortSignal
+): Promise<UploadAccepted> {
   const form = new FormData();
   form.append('file', file, file.name);
 
@@ -123,6 +126,7 @@ export async function uploadBill(file: File): Promise<UploadAccepted> {
     response = await fetch(`${API_BASE}/bills/upload`, {
       method: 'POST',
       body: form,
+      signal,
     });
   } catch {
     throw new ApiError(

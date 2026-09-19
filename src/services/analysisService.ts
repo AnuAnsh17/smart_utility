@@ -103,7 +103,7 @@ export class AnalysisService {
     handlers: LiveAnalysisHandlers,
     signal?: AbortSignal
   ): Promise<LiveAnalysis> {
-    const accepted = await uploadBill(file);
+    const accepted = await uploadBill(file, signal);
 
     const finished = await new Promise<JobStatusPayload>((resolve, reject) => {
       const stop = followJob(

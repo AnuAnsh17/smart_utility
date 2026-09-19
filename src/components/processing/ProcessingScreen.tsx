@@ -51,15 +51,6 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
   const filesRef = useRef(files);
   filesRef.current = files;
 
-  // Which batch has already been sent. React StrictMode mounts, unmounts and
-  // remounts every effect on the same instance in development — and the upload
-  // POST is the one call with no abort signal, so stopping it client-side is not
-  // possible: the server has already been asked and will create a second job.
-  // The user would see every bill listed twice. A ref survives that simulated
-  // remount but not a real one, so re-running a batch after navigating away
-  // still works.
-  const startedForKey = useRef<string | null>(null);
-
   // The parent rebuilds the array on every render, so the run is keyed on the
   // files themselves rather than on the array's identity.
   const batchKey = files
@@ -75,9 +66,6 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
   }, []);
 
   useEffect(() => {
-    if (startedForKey.current === batchKey) return;
-    startedForKey.current = batchKey;
-
     const controller = new AbortController();
     let cancelled = false;
     const queue = filesRef.current;
@@ -85,7 +73,7 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
     // Bills are analysed strictly one at a time, and each run is awaited before
     // the next begins — so bill N is compared against the history bills 1..N-1
     // already wrote, which is what lets the later forecasts use real data.
-    void (async () => {
+    const runBatch = async () => {
       const failed: BatchSummary['failed'] = [];
       let last: LiveAnalysis | null = null;
 
@@ -140,9 +128,20 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
           summary
         );
       }
-    })();
+    };
+
+    // StrictMode mounts, unmounts and remounts each effect within a single
+    // synchronous commit, so a zero-delay timer cannot fire before the first
+    // cleanup clears it. Deferring the start is what makes the abandoned mount
+    // harmless: it never reaches the network, so it cannot leave a stray job
+    // behind. Starting inline instead would send bill 1 from a run that is
+    // cancelled a moment later, and the batch would die there.
+    const startTimer = setTimeout(() => {
+      void runBatch();
+    }, 0);
 
     return () => {
+      clearTimeout(startTimer);
       cancelled = true;
       controller.abort();
     };
