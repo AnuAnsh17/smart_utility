@@ -930,7 +930,24 @@ def suggest_from_text(ocr_text: str, *, requested: list[str]) -> AgentResult | N
             {"role": "user", "content": _build_hosted_prompt(sent_text, fields)},
         ],
         "temperature": 0,
-        "max_tokens": 1500,
+        # Bounded, and the bound is load-bearing in both directions.
+        #
+        # Too small and a reasoning model spends the whole budget thinking
+        # before it emits a character: the reply comes back with
+        # finish_reason="length" and content=null, which is indistinguishable
+        # from a model that had nothing to say. That is a silent failure — the
+        # pipeline reports a normal agent duration and recovers nothing.
+        #
+        # Omitting the cap entirely is worse. OpenRouter reserves credit
+        # against the model's *maximum* possible completion, so a request with
+        # no max_tokens is priced at the full context window (131072 here) and
+        # is rejected outright with HTTP 402 on any account that cannot cover
+        # it — "This request requires more credits, or fewer max_tokens."
+        #
+        # 16000 leaves several times the headroom a page of bill text actually
+        # costs to reason about, while keeping the reservation small enough to
+        # clear.
+        "max_tokens": 16000,
         "response_format": {"type": "json_object"},
     }
 
