@@ -1,0 +1,20 @@
+# Smart Utility — local backend
+# Verified to install cleanly on CPython 3.14 (no source builds).
+# System prerequisites (not pip-installable):
+#   tesseract-ocr >= 5.x  + language packs: eng hin mar tam tel ben guj kan mal pan ori asm
+#   e.g. sudo apt-get install tesseract-ocr tesseract-ocr-hin tesseract-ocr-mar ...
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.9
+pydantic-settings>=2.5
+sqlalchemy>=2.0
+pymupdf>=1.24          # PDF rasterisation (replaces poppler subprocess)
+pytesseract>=0.3.13    # Tesseract binding
+pillow>=10.4           # image loading / preprocessing
+numpy>=1.26            # OCR post-processing
+
+# --- development / test only (not required at runtime) ---
+pytest>=8.0
+httpx>=0.27
