@@ -20,6 +20,13 @@ interface ProcessingScreenProps {
 
 type BillOutcome = 'pending' | 'done' | 'failed';
 
+const TIPS = [
+  'Weather and appliance usage can significantly impact your electricity bill.',
+  'Did you know? Inverter ACs save up to 40% energy compared to non-inverter models.',
+  'Air conditioners contribute up to 35-50% of summer electricity costs in Indian households.',
+  'Peak grid hours are usually 6 PM to 10 PM. Running heavy loads during off-peak hours improves grid stability.',
+];
+
 export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
   files,
   onComplete,
@@ -44,20 +51,33 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
   const filesRef = useRef(files);
   filesRef.current = files;
 
+  // Which batch has already been sent. React StrictMode mounts, unmounts and
+  // remounts every effect on the same instance in development — and the upload
+  // POST is the one call with no abort signal, so stopping it client-side is not
+  // possible: the server has already been asked and will create a second job.
+  // The user would see every bill listed twice. A ref survives that simulated
+  // remount but not a real one, so re-running a batch after navigating away
+  // still works.
+  const startedForKey = useRef<string | null>(null);
+
   // The parent rebuilds the array on every render, so the run is keyed on the
   // files themselves rather than on the array's identity.
   const batchKey = files
     .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
     .join('|');
 
-  const tips = [
-    'Weather and appliance usage can significantly impact your electricity bill.',
-    'Did you know? Inverter ACs save up to 40% energy compared to non-inverter models.',
-    'Air conditioners contribute up to 35-50% of summer electricity costs in Indian households.',
-    'Peak grid hours are usually 6 PM to 10 PM. Running heavy loads during off-peak hours improves grid stability.'
-  ];
+  // Kept apart from the run so a guard on the run cannot also stall the tips.
+  useEffect(() => {
+    const tipInterval = setInterval(() => {
+      setActiveTipIndex((prev) => (prev + 1) % TIPS.length);
+    }, 3200);
+    return () => clearInterval(tipInterval);
+  }, []);
 
   useEffect(() => {
+    if (startedForKey.current === batchKey) return;
+    startedForKey.current = batchKey;
+
     const controller = new AbortController();
     let cancelled = false;
     const queue = filesRef.current;
@@ -122,14 +142,9 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
       }
     })();
 
-    const tipInterval = setInterval(() => {
-      setActiveTipIndex(prev => (prev + 1) % tips.length);
-    }, 3200);
-
     return () => {
       cancelled = true;
       controller.abort();
-      clearInterval(tipInterval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchKey]);
@@ -289,7 +304,7 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
           </div>
           <div className="text-[12px] text-slate-700 leading-snug">
             <span className="font-bold text-slate-900 block mb-0.5">Did you know?</span>
-            {tips[activeTipIndex]}
+            {TIPS[activeTipIndex]}
           </div>
         </motion.div>
       </main>
