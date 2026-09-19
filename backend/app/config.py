@@ -5,9 +5,10 @@ from __future__ import annotations
 import shutil
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,7 +24,12 @@ class Settings(BaseSettings):
     app_name: str = "Smart Utility Backend"
     host: str = "127.0.0.1"
     port: int = 8000
-    cors_origins: list[str] = Field(
+    # NoDecode on every list field: without it pydantic-settings JSON-decodes
+    # the raw env value before validators run, so a plain
+    # "CORS_ORIGINS=http://a,http://b" dies in the source layer and _split_csv
+    # below never gets a chance to split it. The .env file is written for a
+    # human to edit, and a human writes a comma-separated list.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
     )
 
@@ -33,7 +39,9 @@ class Settings(BaseSettings):
 
     # --- OCR ---
     ocr_engine: str = "tesseract"
-    ocr_languages: list[str] = Field(default_factory=lambda: ["eng", "hin", "mar"])
+    ocr_languages: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["eng", "hin", "mar"]
+    )
     ocr_dpi: int = 300
     ocr_max_pages: int = 12
     ocr_timeout_seconds: int = 180
@@ -59,7 +67,7 @@ class Settings(BaseSettings):
     # Environment variables forwarded to the agent process. Everything else is
     # dropped, so no ambient credential leaks into a subprocess. If your agent
     # authenticates via an env var, name it here explicitly.
-    agent_env_allowlist: list[str] = Field(default_factory=list)
+    agent_env_allowlist: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # Which agent the pipeline calls. ``cli`` is the local subprocess above and
     # can only *choose between* candidate strings OCR already found. ``openrouter``
