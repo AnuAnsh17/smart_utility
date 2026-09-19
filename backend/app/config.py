@@ -74,7 +74,10 @@ class Settings(BaseSettings):
     # reads the OCR text itself, so it can recover fields the rules never
     # located — at the cost of document text leaving this machine.
     agent_provider: str = "openrouter"
-    agent_model: str = "anthropic/claude-haiku-4.5"
+    # Must be a model the account can actually be billed for: a key with no
+    # credit gets HTTP 402 from every paid model, and the agent stage then
+    # contributes nothing while still reporting a normal duration.
+    agent_model: str = "deepseek/deepseek-v4-flash"
     agent_api_base: str = "https://openrouter.ai/api/v1"
     # Name of the environment variable holding the key. The key itself is never
     # written to a config file, never logged, and never echoed in /health.
