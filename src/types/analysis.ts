@@ -40,3 +40,14 @@ export interface LiveAnalysis {
   result: AnalysisResult;
   meta: AnalysisMeta;
 }
+
+/**
+ * What happened across a multi-bill run. Bills are analysed one at a time, so
+ * one unreadable photo must not discard the nine that parsed — the run reports
+ * how many landed and names the ones that did not.
+ */
+export interface BatchSummary {
+  total: number;
+  succeeded: number;
+  failed: { name: string; message: string }[];
+}

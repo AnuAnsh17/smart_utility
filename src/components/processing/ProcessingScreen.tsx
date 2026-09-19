@@ -3,8 +3,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Logo } from '@/components/brand/Logo';
-import { FileText, CheckCircle2, Loader2, Circle, Lightbulb } from 'lucide-react';
-import { AnalysisPipelineStep, LiveAnalysis } from '@/types/analysis';
+import { FileText, CheckCircle2, Loader2, Circle, Lightbulb, AlertCircle } from 'lucide-react';
+import { AnalysisPipelineStep, BatchSummary, LiveAnalysis } from '@/types/analysis';
 import {
   INITIAL_PIPELINE_STEPS,
   analysisService,
@@ -12,28 +12,43 @@ import {
 } from '@/services/analysisService';
 
 interface ProcessingScreenProps {
-  /** The document the user actually chose. */
-  file: File;
-  onComplete: (live: LiveAnalysis) => void;
-  onFailed: (message: string) => void;
+  /** The documents the user actually chose, in the order they should run. */
+  files: File[];
+  onComplete: (live: LiveAnalysis, summary: BatchSummary) => void;
+  onFailed: (message: string, summary: BatchSummary) => void;
 }
 
+type BillOutcome = 'pending' | 'done' | 'failed';
+
 export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
-  file,
+  files,
   onComplete,
   onFailed,
 }) => {
+  const [index, setIndex] = useState(0);
   const [steps, setSteps] = useState<AnalysisPipelineStep[]>(INITIAL_PIPELINE_STEPS);
   const [activeTipIndex, setActiveTipIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('Uploading your bill...');
+  const [outcomes, setOutcomes] = useState<BillOutcome[]>(() =>
+    files.map(() => 'pending')
+  );
 
-  // The callbacks are read through refs so the effect can run exactly once for
-  // a given file; a parent re-render must not restart the upload.
+  // The callbacks are read through refs so the run below starts exactly once
+  // per batch; a parent re-render must not restart the uploads.
   const onCompleteRef = useRef(onComplete);
   const onFailedRef = useRef(onFailed);
   onCompleteRef.current = onComplete;
   onFailedRef.current = onFailed;
+
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  // The parent rebuilds the array on every render, so the run is keyed on the
+  // files themselves rather than on the array's identity.
+  const batchKey = files
+    .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
+    .join('|');
 
   const tips = [
     'Weather and appliance usage can significantly impact your electricity bill.',
@@ -45,27 +60,67 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
+    const queue = filesRef.current;
 
-    analysisService
-      .runLiveAnalysis(
-        file,
-        {
-          onStepChange: (next, status) => {
-            if (cancelled) return;
-            setSteps(next);
-            setProgress(status.progress ?? 0);
-            if (status.message) setMessage(status.message);
-          },
-        },
-        controller.signal
-      )
-      .then((live) => {
-        if (!cancelled) onCompleteRef.current(live);
-      })
-      .catch((error) => {
+    // Bills are analysed strictly one at a time, and each run is awaited before
+    // the next begins — so bill N is compared against the history bills 1..N-1
+    // already wrote, which is what lets the later forecasts use real data.
+    void (async () => {
+      const failed: BatchSummary['failed'] = [];
+      let last: LiveAnalysis | null = null;
+
+      for (let position = 0; position < queue.length; position += 1) {
         if (cancelled) return;
-        onFailedRef.current(failureMessage(error));
-      });
+        const current = queue[position];
+
+        setIndex(position);
+        setSteps(INITIAL_PIPELINE_STEPS);
+        setProgress(0);
+        setMessage(`Uploading ${current.name}...`);
+
+        try {
+          last = await analysisService.runLiveAnalysis(
+            current,
+            {
+              onStepChange: (next, status) => {
+                if (cancelled) return;
+                setSteps(next);
+                setProgress(status.progress ?? 0);
+                if (status.message) setMessage(status.message);
+              },
+            },
+            controller.signal
+          );
+          if (cancelled) return;
+          setOutcomes((prev) =>
+            prev.map((outcome, i) => (i === position ? 'done' : outcome))
+          );
+        } catch (error) {
+          if (cancelled) return;
+          // One unreadable bill must not abandon the rest of the batch.
+          failed.push({ name: current.name, message: failureMessage(error) });
+          setOutcomes((prev) =>
+            prev.map((outcome, i) => (i === position ? 'failed' : outcome))
+          );
+        }
+      }
+
+      if (cancelled) return;
+      const summary: BatchSummary = {
+        total: queue.length,
+        succeeded: queue.length - failed.length,
+        failed,
+      };
+
+      if (last) {
+        onCompleteRef.current(last, summary);
+      } else {
+        onFailedRef.current(
+          failed[0]?.message ?? 'We could not read anything from those documents.',
+          summary
+        );
+      }
+    })();
 
     const tipInterval = setInterval(() => {
       setActiveTipIndex(prev => (prev + 1) % tips.length);
@@ -76,7 +131,11 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
       controller.abort();
       clearInterval(tipInterval);
     };
-  }, [file]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchKey]);
+
+  const total = files.length;
+  const isBatch = total > 1;
 
   return (
     <motion.div
@@ -94,7 +153,9 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
         <Logo size="md" />
         <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200/80 shadow-xs">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          Analysing your bill...
+          {isBatch
+            ? `Analysing bill ${Math.min(index + 1, total)} of ${total}...`
+            : 'Analysing your bill...'}
         </div>
       </header>
 
@@ -116,11 +177,55 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
 
         {/* Headings */}
         <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight mb-2">
-          Analysing your electricity bill...
+          {isBatch
+            ? 'Analysing your electricity bills...'
+            : 'Analysing your electricity bill...'}
         </h2>
+        {isBatch && files[index] && (
+          <p className="text-[11px] font-semibold text-emerald-700 mb-1.5 max-w-sm mx-auto truncate">
+            Bill {index + 1} of {total} — {files[index].name}
+          </p>
+        )}
         <p className="text-xs md:text-sm text-slate-500 max-w-sm mx-auto mb-8">
           {message} Everything runs on this machine; your bill is not uploaded anywhere.
         </p>
+
+        {/* Per-bill status across the batch */}
+        {isBatch && (
+          <div className="max-w-md mx-auto mb-5 flex flex-wrap items-center justify-center gap-1.5">
+            {files.map((file, position) => {
+              const outcome = outcomes[position] ?? 'pending';
+              const isCurrent = position === index && outcome !== 'done';
+
+              return (
+                <span
+                  key={`${file.name}-${position}`}
+                  title={file.name}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-semibold tabular-nums transition-colors ${
+                    outcome === 'done'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : outcome === 'failed'
+                      ? 'bg-rose-50 border-rose-200 text-rose-700'
+                      : isCurrent
+                      ? 'bg-white border-emerald-300 text-emerald-800'
+                      : 'bg-white/70 border-slate-200 text-slate-400'
+                  }`}
+                >
+                  {outcome === 'done' ? (
+                    <CheckCircle2 className="w-3 h-3" />
+                  ) : outcome === 'failed' ? (
+                    <AlertCircle className="w-3 h-3" />
+                  ) : isCurrent ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Circle className="w-3 h-3 stroke-[1.5]" />
+                  )}
+                  Bill {position + 1}
+                </span>
+              );
+            })}
+          </div>
+        )}
 
         {/* Real progress, reported by the backend job. */}
         <div className="max-w-md mx-auto mb-6">

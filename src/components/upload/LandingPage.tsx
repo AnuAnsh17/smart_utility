@@ -9,22 +9,24 @@ import { UploadedBillFile } from '@/types/bill';
 import { ArrowRight, Sparkles } from 'lucide-react';
 
 interface LandingPageProps {
-  onFileSelect: (file: UploadedBillFile) => void;
+  onFilesSelect: (files: UploadedBillFile[]) => void;
   onUseSample: () => void;
   onStartAnalysis: () => void;
-  selectedFile: UploadedBillFile | null;
-  onClearFile: () => void;
+  selectedFiles: UploadedBillFile[];
+  onClearFiles: () => void;
+  onRemoveFile: (id: string) => void;
   isDemoMode: boolean;
   onToggleDemoMode: (enabled: boolean) => void;
   onExploreSampleDashboard: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
-  onFileSelect,
+  onFilesSelect,
   onUseSample,
   onStartAnalysis,
-  selectedFile,
-  onClearFile,
+  selectedFiles,
+  onClearFiles,
+  onRemoveFile,
   isDemoMode,
   onToggleDemoMode,
   onExploreSampleDashboard,
@@ -107,11 +109,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           transition={{ duration: 0.5, delay: 0.3 }}
         >
           <UploadZone
-            onFileSelect={onFileSelect}
+            onFilesSelect={onFilesSelect}
             onUseSample={onUseSample}
             onStartAnalysis={onStartAnalysis}
-            selectedFile={selectedFile}
-            onClearFile={onClearFile}
+            selectedFiles={selectedFiles}
+            onClearFiles={onClearFiles}
+            onRemoveFile={onRemoveFile}
           />
 
           {/* Secondary Demo Mode CTA if Demo Mode is ON */}

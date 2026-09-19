@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, RotateCcw } from 'lucide-react';
-import { AppStage, AnalysisResult, AnalysisMeta, LiveAnalysis } from '@/types/analysis';
+import { AppStage, AnalysisResult, AnalysisMeta, BatchSummary, LiveAnalysis } from '@/types/analysis';
 import { UploadedBillFile } from '@/types/bill';
 import { DashboardTab } from '@/components/layout/Sidebar';
 import { LandingPage } from '@/components/upload/LandingPage';
@@ -29,17 +29,39 @@ import { analysisService, MOCK_ANALYSIS_RESULT } from '@/services/analysisServic
 export default function Home() {
   const [stage, setStage] = useState<AppStage>('landing');
   const [activeTab, setActiveTab] = useState<DashboardTab>('dashboard');
-  const [selectedFile, setSelectedFile] = useState<UploadedBillFile | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<UploadedBillFile[]>([]);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult>(MOCK_ANALYSIS_RESULT);
   const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
+  const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null);
   const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
 
   // File Upload Handlers
-  const handleFileSelect = (file: UploadedBillFile) => {
-    setSelectedFile(file);
+  const handleFilesSelect = (files: UploadedBillFile[]) => {
+    setSelectedFiles(files);
+    setBatchSummary(null);
   };
+
+  const handleRemoveFile = (id: string) => {
+    setSelectedFiles((prev) => prev.filter((file) => file.id !== id));
+  };
+
+  const handleClearFiles = () => {
+    setSelectedFiles([]);
+    setBatchSummary(null);
+  };
+
+  // The queue handed to the processing screen. Memoised so the array keeps one
+  // identity across renders — the screen keys its run on the files, and a fresh
+  // array on every render would be a needless source of churn.
+  const queuedFiles = useMemo(
+    () =>
+      selectedFiles
+        .map((file) => file.rawFile)
+        .filter((file): file is File => Boolean(file)),
+    [selectedFiles]
+  );
 
   // "Use a Sample Bill" is a demo affordance, and it now says so. It used to
   // fabricate a file record and push it through the real processing screen,
@@ -49,20 +71,23 @@ export default function Home() {
   };
 
   const handleStartAnalysis = () => {
-    if (!selectedFile?.rawFile) return;
+    if (queuedFiles.length === 0) return;
     setIsDemoMode(false);
     setFailureMessage(null);
+    setBatchSummary(null);
     setStage('processing');
   };
 
-  const handleProcessingComplete = (live: LiveAnalysis) => {
+  const handleProcessingComplete = (live: LiveAnalysis, summary: BatchSummary) => {
     setAnalysisResult(live.result);
     setAnalysisMeta(live.meta);
+    setBatchSummary(summary);
     setStage('complete');
   };
 
-  const handleProcessingFailed = (message: string) => {
+  const handleProcessingFailed = (message: string, summary: BatchSummary) => {
     setFailureMessage(message);
+    setBatchSummary(summary);
     setStage('failed');
   };
 
@@ -87,8 +112,9 @@ export default function Home() {
 
   const handleExitDemo = () => {
     setIsDemoMode(false);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setAnalysisMeta(null);
+    setBatchSummary(null);
     setFailureMessage(null);
     setStage('landing');
   };
@@ -149,11 +175,12 @@ export default function Home() {
         {stage === 'landing' && (
           <motion.div key="landing-stage">
             <LandingPage
-              onFileSelect={handleFileSelect}
+              onFilesSelect={handleFilesSelect}
               onUseSample={handleUseSample}
               onStartAnalysis={handleStartAnalysis}
-              selectedFile={selectedFile}
-              onClearFile={() => setSelectedFile(null)}
+              selectedFiles={selectedFiles}
+              onClearFiles={handleClearFiles}
+              onRemoveFile={handleRemoveFile}
               isDemoMode={isDemoMode}
               onToggleDemoMode={setIsDemoMode}
               onExploreSampleDashboard={handleExploreSampleDashboard}
@@ -162,11 +189,10 @@ export default function Home() {
         )}
 
         {/* STAGE 2: PROCESSING SCREEN — real upload against the local backend */}
-        {stage === 'processing' && selectedFile?.rawFile && (
+        {stage === 'processing' && queuedFiles.length > 0 && (
           <motion.div key="processing-stage">
             <ProcessingScreen
-              key={selectedFile.id}
-              file={selectedFile.rawFile}
+              files={queuedFiles}
               onComplete={handleProcessingComplete}
               onFailed={handleProcessingFailed}
             />
@@ -186,11 +212,30 @@ export default function Home() {
                 <AlertCircle className="w-6 h-6 stroke-[2]" />
               </div>
               <h2 className="text-lg font-extrabold text-slate-900 mb-2">
-                We could not analyse this bill
+                {batchSummary && batchSummary.total > 1
+                  ? `We could not analyse ${batchSummary.total === 2 ? 'either bill' : 'any of these bills'}`
+                  : 'We could not analyse this bill'}
               </h2>
               <p className="text-sm text-slate-500 leading-relaxed mb-6">
                 {failureMessage}
               </p>
+              {batchSummary && batchSummary.failed.length > 1 && (
+                <ul className="text-left space-y-1.5 mb-6">
+                  {batchSummary.failed.map((item) => (
+                    <li
+                      key={item.name}
+                      className="flex items-start gap-2 rounded-xl bg-rose-50/70 border border-rose-100 px-3 py-2"
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span className="text-[12px] text-rose-900 leading-snug min-w-0">
+                        <span className="font-semibold break-words">{item.name}</span>
+                        {' — '}
+                        {item.message}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <div className="flex items-center justify-center gap-3">
                 <button
                   type="button"
@@ -218,6 +263,7 @@ export default function Home() {
             <AnalysisComplete
               bill={analysisResult.bill}
               meta={analysisMeta}
+              batch={batchSummary}
               onOpenDashboard={handleOpenDashboard}
             />
           </motion.div>

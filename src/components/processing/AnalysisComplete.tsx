@@ -3,23 +3,27 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Logo } from '@/components/brand/Logo';
-import { FileText, CheckCircle2, Zap, Calendar, IndianRupee, ArrowRight, Info } from 'lucide-react';
+import { FileText, CheckCircle2, Zap, Calendar, IndianRupee, ArrowRight, Info, AlertCircle } from 'lucide-react';
 import { BillData } from '@/types/bill';
-import { AnalysisMeta } from '@/types/analysis';
+import { AnalysisMeta, BatchSummary } from '@/types/analysis';
 import { orDash, formatAmount } from '@/lib/format';
 
 interface AnalysisCompleteProps {
   bill: BillData;
   /** Null in demo mode, where nothing was actually parsed. */
   meta?: AnalysisMeta | null;
+  /** Present only for a multi-bill run, where some bills may not have parsed. */
+  batch?: BatchSummary | null;
   onOpenDashboard: () => void;
 }
 
 export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({
   bill,
   meta,
+  batch,
   onOpenDashboard,
 }) => {
+  const failed = batch?.failed ?? [];
   const notices = [
     ...(meta?.warnings ?? []),
     ...(meta && meta.missingFields.length > 0
@@ -74,7 +78,9 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({
           transition={{ delay: 0.1 }}
           className="text-2xl md:text-4xl font-extrabold text-slate-900 tracking-tight mb-2"
         >
-          Analysis complete!
+          {batch && batch.total > 1 && batch.succeeded === batch.total
+            ? 'All bills analysed!'
+            : 'Analysis complete!'}
         </motion.h2>
 
         <motion.p
@@ -85,6 +91,18 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({
         >
           We&apos;ve successfully analysed your bill and prepared your personalized insights.
         </motion.p>
+
+        {batch && batch.total > 1 && (
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="max-w-md mx-auto -mt-5 mb-6 text-[12px] font-semibold text-emerald-700"
+          >
+            {batch.succeeded} of {batch.total} bills analysed — the dashboard below is
+            the latest one.
+          </motion.p>
+        )}
 
         {/* Primary CTA */}
         <motion.div
@@ -176,6 +194,30 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({
               >
                 <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                 <span className="text-[12px] text-amber-900 leading-snug">{notice}</span>
+              </li>
+            ))}
+          </motion.ul>
+        )}
+
+        {/* Bills in the batch that did not parse. Named, so the user knows which. */}
+        {failed.length > 0 && (
+          <motion.ul
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.55 }}
+            className="mt-3 max-w-md mx-auto text-left space-y-2"
+          >
+            {failed.map((item) => (
+              <li
+                key={item.name}
+                className="flex items-start gap-2.5 rounded-xl bg-rose-50/70 border border-rose-100 px-3.5 py-2.5"
+              >
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                <span className="text-[12px] text-rose-900 leading-snug min-w-0">
+                  <span className="font-semibold break-words">{item.name}</span>
+                  {' — '}
+                  {item.message}
+                </span>
               </li>
             ))}
           </motion.ul>
