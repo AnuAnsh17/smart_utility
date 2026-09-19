@@ -138,43 +138,14 @@ def _refresh_missing(bill) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _apply_agent_suggestions(
-    bill,
-    extraction,
-    logger: JobLogger,
-    warnings: list[str],
-) -> None:
-    """Let the configured agent resolve unresolved fields, if it can.
+def _apply_agent_fields(bill, suggestion, logger: JobLogger) -> int:
+    """Write an accepted suggestion onto the bill. Returns how many landed.
 
-    Deliberately narrow. The agent is shown the candidate strings OCR already
-    found and may only *choose between them* — it cannot introduce a value that
-    is not in the list, and it cannot touch a field that was already read. A
-    bad answer is dropped, not applied with a caveat.
+    A field the rules already read is never overwritten, whatever the agent
+    says about it — the agent is here to fill gaps, not to revise.
     """
-    if not agent_service.is_available():
-        return
-
-    requested = [
-        name
-        for name in bill.missing_fields
-        if name in agent_service.SUGGESTIBLE_FIELDS
-    ]
-    if not requested:
-        return
-
-    try:
-        with logger.stage("AGENT", fields=len(requested)):
-            suggestion = agent_service.suggest(extraction.candidates, requested=requested)
-    except Exception:
-        log.exception("agent step failed for job")
-        warnings.append(
-            "The optional assistant step could not run. Fields were extracted "
-            "from the document by the usual rules."
-        )
-        return
-
     if suggestion is None:
-        return
+        return 0
 
     applied = 0
     for name, payload in suggestion.fields.items():
@@ -190,12 +161,82 @@ def _apply_agent_suggestions(
         applied += 1
 
     if suggestion.rejected:
+        # Field names and reasons only — never the rejected values, which came
+        # out of a document.
         logger.warning(
             f"[AGENT] rejected={len(suggestion.rejected)} "
-            f"cli={suggestion.cli}"
+            f"why={','.join(sorted(set(suggestion.rejected.values())))}"
         )
     if applied:
-        logger.info(f"[AGENT] applied={applied} cli={suggestion.cli}")
+        logger.info(f"[AGENT] applied={applied} via={suggestion.cli}")
+    return applied
+
+
+def _apply_agent_suggestions(
+    bill,
+    extraction,
+    ocr_text: str,
+    logger: JobLogger,
+    warnings: list[str],
+) -> None:
+    """Let the configured agent resolve unresolved fields, if it can.
+
+    Two providers, tried in order of how much they are trusted with. The CLI
+    provider is shown candidate strings OCR already found and may only *choose
+    between them*. The hosted provider reads the document itself, so it can
+    recover a field no rule located — it is the one that sends text off this
+    machine, and it is off unless an operator turned it on.
+
+    Both are held to the same rule: a value the agent cannot substantiate is
+    dropped rather than applied with a caveat, and a field a rule already read
+    is never touched. Neither is a dependency — if both decline, the pipeline
+    carries on with what the rules found.
+    """
+    if not agent_service.is_available():
+        return
+
+    requested = [
+        name
+        for name in bill.missing_fields
+        if name in agent_service.SUGGESTIBLE_FIELDS
+    ]
+    if not requested:
+        return
+
+    applied = 0
+    try:
+        with logger.stage("AGENT", fields=len(requested)):
+            # The local chooser first: it costs nothing and sends nothing. It
+            # declines outright when the hosted provider is the configured one.
+            applied += _apply_agent_fields(
+                bill,
+                agent_service.suggest(extraction.candidates, requested=requested),
+                logger,
+            )
+
+            # Whatever is still missing, ask the provider that can read the
+            # document. Recomputed rather than assumed, so the second request
+            # does not ask for a field the first one just filled.
+            remaining = [
+                name
+                for name in _refresh_missing(bill)
+                if name in agent_service.SUGGESTIBLE_FIELDS
+            ]
+            if remaining and ocr_text.strip():
+                applied += _apply_agent_fields(
+                    bill,
+                    agent_service.suggest_from_text(ocr_text, requested=remaining),
+                    logger,
+                )
+    except Exception:
+        log.exception("agent step failed for job")
+        warnings.append(
+            "The optional assistant step did not finish. Anything read from the "
+            "document by the usual rules is unaffected."
+        )
+        return
+
+    if applied:
         _refresh_missing(bill)
 
 
@@ -250,7 +291,11 @@ def _execute(session, job_id: str, logger: JobLogger) -> None:
     bill.ocr_mean_confidence = ocr_document.mean_confidence
     bill.source_file_name = document.original_filename
 
-    _apply_agent_suggestions(bill, extraction, logger, warnings)
+    # The same text the rules were given, so the agent and the rules are
+    # reading one document rather than two transcriptions of one.
+    _apply_agent_suggestions(
+        bill, extraction, "\n".join(text for _, text in normalised_pages), logger, warnings
+    )
     _goto(session, job_id, "extraction")
 
     # --- normalisation -----------------------------------------------------

@@ -4,9 +4,9 @@
 insights, forecasts, and conversational guidance. Next.js frontend, local
 FastAPI backend.
 
-Everything runs on your own machine. Uploaded bills, OCR text and analysis
-results are written to `backend/data/` and are never sent to an external
-service — no cloud OCR, no third-party LLM, no telemetry.
+Everything runs on your own machine by default. Uploaded bills, OCR text and
+analysis results are written to `backend/data/` — no cloud OCR, no telemetry,
+and no third-party LLM unless you deliberately switch one on.
 
 ---
 
@@ -205,10 +205,25 @@ containing a figure absent from the analysis is discarded. Off-topic questions
 get a fixed refusal; questions the bill cannot answer get a fixed
 "not enough information" reply.
 
-The optional `agent_service.py` boundary is disabled by default (`agent.enabled
-= false`). When enabled it runs a fixed, allowlisted CLI with no tools, in a
-scratch sandbox, and is used only for field disambiguation — never as the
-numerical source of truth.
+The optional `agent_service.py` boundary is disabled by default
+(`AGENT_ENABLED=false`) and exists to recover fields the deterministic rules
+could not find. It is never the source of truth: it *proposes*, and Python
+*disposes*. Every proposed value must come with a quote from the document, the
+quote must occur verbatim in the text the model was actually shown, and a
+numeric or date value must be recoverable from that same quote. A proposal that
+fails any of those checks is dropped, and a field the rules already read is
+never overwritten.
+
+Two providers sit behind that boundary:
+
+| Provider | Reads | Sends off-machine |
+| --- | --- | --- |
+| `cli` | candidate strings OCR already found; may only choose between them | nothing |
+| `openrouter` | the document text itself, so it can recover fields no rule located | redacted OCR text |
+
+When both decline — no key, no network, an unusable reply — the pipeline
+completes on rules alone, and the fields stay `null`. Nothing is ever filled in
+with a guess.
 
 ### Privacy
 
@@ -216,6 +231,14 @@ Documents, OCR text, the database and result files all live under
 `backend/data/`, which is gitignored. Logs record job ID, stage, timings and
 errors only — never bill images, consumer numbers, or full OCR text. Numeric
 identifiers are redacted from assistant output.
+
+With `AGENT_PROVIDER=openrouter` and `AGENT_ENABLED=true`, redacted document
+text is sent to the configured endpoint. Before it leaves, consumer numbers,
+phone numbers, email addresses, PANs, PIN-coded address lines and labelled
+personal names are replaced with `[REDACTED-...]` tokens. This reduces exposure;
+it is **not** anonymisation — see the limitations at the top of
+`app/core/redaction.py`. If a document is too sensitive to send even reduced,
+leave the agent off; extraction does not depend on it.
 
 ---
 
@@ -300,7 +323,14 @@ OCR_TIMEOUT_SECONDS=180
 OCR_KEEP_PAGE_IMAGES=false
 
 ENABLE_TRANSLATION=false           # normalisation happens without a translation model
-AGENT_ENABLED=false                # optional disambiguation CLI, off by default
+
+AGENT_ENABLED=false                # off by default; ON means document text may leave
+AGENT_PROVIDER=openrouter          # openrouter (hosted) | cli (local, sends nothing)
+AGENT_MODEL=anthropic/claude-haiku-4.5
+AGENT_API_KEY_ENV=OPENROUTER_API_KEY   # names the env var; the key is never stored
+AGENT_REDACT=true                  # strip identifiers before anything is sent
+AGENT_MAX_OCR_CHARS=16000
+
 WEATHER_ENABLED=false              # stays "unavailable" until enabled
 WEATHER_API_BASE=https://api.open-meteo.com/v1
 
@@ -310,6 +340,17 @@ LOG_REDACT=true                    # keep consumer numbers and OCR text out of l
 
 Leave `WEATHER_ENABLED=false` and `AGENT_ENABLED=false` for a fully offline
 run — both are optional enrichment, and the pipeline completes without them.
+
+### Enabling the hosted agent
+
+```bash
+export OPENROUTER_API_KEY=...      # never written to a file
+echo "AGENT_ENABLED=true" >> backend/.env
+```
+
+Also worth reading: `GET /api/v1/health` reports the agent's provider, model,
+whether a key was found, and whether it will send document text. It never
+reports the key.
 
 ---
 

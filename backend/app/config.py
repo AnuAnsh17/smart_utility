@@ -61,6 +61,30 @@ class Settings(BaseSettings):
     # authenticates via an env var, name it here explicitly.
     agent_env_allowlist: list[str] = Field(default_factory=list)
 
+    # Which agent the pipeline calls. ``cli`` is the local subprocess above and
+    # can only *choose between* candidate strings OCR already found. ``openrouter``
+    # reads the OCR text itself, so it can recover fields the rules never
+    # located — at the cost of document text leaving this machine.
+    agent_provider: str = "openrouter"
+    agent_model: str = "anthropic/claude-haiku-4.5"
+    agent_api_base: str = "https://openrouter.ai/api/v1"
+    # Name of the environment variable holding the key. The key itself is never
+    # written to a config file, never logged, and never echoed in /health.
+    agent_api_key_env: str = "OPENROUTER_API_KEY"
+    # Optional inline key. Prefer leaving this empty and exporting the variable
+    # named above instead, so the key never sits in a file on disk.
+    agent_api_key: str = ""
+    agent_http_timeout_seconds: float = 60.0
+    # Redact structured personal identifiers before any text is sent. See
+    # app/core/redaction.py for exactly what this does and does not catch.
+    agent_redact: bool = True
+    agent_max_ocr_chars: int = 16_000
+
+    # The assistant answers from the stored analysis. With this on it may also
+    # read the OCR text to handle questions the templates do not cover. Numeric
+    # replies are still validated against the analysis before they are returned.
+    assistant_model_enabled: bool = False
+
     # --- weather ---
     # Off by default. When enabled, the only thing sent off the machine is a
     # coordinate pair the operator configured — never anything read from a bill.
@@ -108,6 +132,17 @@ class Settings(BaseSettings):
     @property
     def agent_sandbox_path(self) -> Path:
         return self.data_dir / self.agent_sandbox_dir
+
+    def resolve_agent_key(self) -> str | None:
+        """The agent's API key, from the environment or the config field.
+
+        Read at call time rather than at import so a key exported after the
+        process started is still picked up, and so the value is never held on
+        the settings object where it could be repr'd into a log line.
+        """
+        from os import environ
+
+        return environ.get(self.agent_api_key_env, "").strip() or self.agent_api_key.strip() or None
 
     def ensure_directories(self) -> None:
         for path in (
