@@ -9,7 +9,8 @@ interface DashboardShellProps {
   onSelectTab: (tab: DashboardTab) => void;
   children: React.ReactNode;
   location?: string;
-  tempC?: number;
+  /** Null when the weather service is unavailable. */
+  tempC?: number | null;
   isDemoMode?: boolean;
   onExitDemo?: () => void;
 }

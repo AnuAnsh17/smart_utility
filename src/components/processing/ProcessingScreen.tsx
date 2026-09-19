@@ -1,19 +1,39 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Logo } from '@/components/brand/Logo';
 import { FileText, CheckCircle2, Loader2, Circle, Lightbulb } from 'lucide-react';
-import { AnalysisPipelineStep } from '@/types/analysis';
-import { INITIAL_PIPELINE_STEPS } from '@/services/analysisService';
+import { AnalysisPipelineStep, LiveAnalysis } from '@/types/analysis';
+import {
+  INITIAL_PIPELINE_STEPS,
+  analysisService,
+  failureMessage,
+} from '@/services/analysisService';
 
 interface ProcessingScreenProps {
-  onComplete: () => void;
+  /** The document the user actually chose. */
+  file: File;
+  onComplete: (live: LiveAnalysis) => void;
+  onFailed: (message: string) => void;
 }
 
-export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ onComplete }) => {
+export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
+  file,
+  onComplete,
+  onFailed,
+}) => {
   const [steps, setSteps] = useState<AnalysisPipelineStep[]>(INITIAL_PIPELINE_STEPS);
   const [activeTipIndex, setActiveTipIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState('Uploading your bill...');
+
+  // The callbacks are read through refs so the effect can run exactly once for
+  // a given file; a parent re-render must not restart the upload.
+  const onCompleteRef = useRef(onComplete);
+  const onFailedRef = useRef(onFailed);
+  onCompleteRef.current = onComplete;
+  onFailedRef.current = onFailed;
 
   const tips = [
     'Weather and appliance usage can significantly impact your electricity bill.',
@@ -23,37 +43,40 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ onComplete }
   ];
 
   useEffect(() => {
-    // Cycle through pipeline steps smoothly
-    let currentStep = 1;
-    const interval = setInterval(() => {
-      if (currentStep < steps.length) {
-        setSteps(prev =>
-          prev.map((step, idx) => {
-            if (idx < currentStep) return { ...step, status: 'completed' };
-            if (idx === currentStep) return { ...step, status: 'processing' };
-            return { ...step, status: 'pending' };
-          })
-        );
-        currentStep++;
-      } else {
-        clearInterval(interval);
-        // Set all completed and transition
-        setSteps(prev => prev.map(s => ({ ...s, status: 'completed' })));
-        setTimeout(() => {
-          onComplete();
-        }, 900);
-      }
-    }, 900);
+    const controller = new AbortController();
+    let cancelled = false;
+
+    analysisService
+      .runLiveAnalysis(
+        file,
+        {
+          onStepChange: (next, status) => {
+            if (cancelled) return;
+            setSteps(next);
+            setProgress(status.progress ?? 0);
+            if (status.message) setMessage(status.message);
+          },
+        },
+        controller.signal
+      )
+      .then((live) => {
+        if (!cancelled) onCompleteRef.current(live);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        onFailedRef.current(failureMessage(error));
+      });
 
     const tipInterval = setInterval(() => {
       setActiveTipIndex(prev => (prev + 1) % tips.length);
     }, 3200);
 
     return () => {
-      clearInterval(interval);
+      cancelled = true;
+      controller.abort();
       clearInterval(tipInterval);
     };
-  }, [onComplete]);
+  }, [file]);
 
   return (
     <motion.div
@@ -96,8 +119,22 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ onComplete }
           Analysing your electricity bill...
         </h2>
         <p className="text-xs md:text-sm text-slate-500 max-w-sm mx-auto mb-8">
-          Our AI agents are reading, understanding and analysing your bill. This may take a few moments.
+          {message} Everything runs on this machine; your bill is not uploaded anywhere.
         </p>
+
+        {/* Real progress, reported by the backend job. */}
+        <div className="max-w-md mx-auto mb-6">
+          <div className="h-1.5 w-full rounded-full bg-slate-200/80 overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-emerald-500"
+              animate={{ width: `${Math.round(progress * 100)}%` }}
+              transition={{ ease: 'easeOut', duration: 0.3 }}
+            />
+          </div>
+          <div className="mt-1.5 text-[11px] font-semibold text-slate-400 tabular-nums">
+            {Math.round(progress * 100)}%
+          </div>
+        </div>
 
         {/* Pipeline Checklist */}
         <div className="bg-white/80 border border-slate-200/80 rounded-2xl p-5 md:p-6 text-left shadow-md shadow-slate-900/5 backdrop-blur-md mb-8 max-w-md mx-auto space-y-3.5">
@@ -154,7 +191,7 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ onComplete }
 
       {/* Footer */}
       <footer className="w-full max-w-5xl mx-auto text-center z-10 text-[12px] text-slate-400 py-2">
-        Multi-agent extraction engine • Autonomous tariff verification
+        Local processing only • Document never leaves this device
       </footer>
     </motion.div>
   );

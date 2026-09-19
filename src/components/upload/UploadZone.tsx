@@ -46,7 +46,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
       name: file.name,
       size: file.size,
       type: file.type,
+      lastModified: file.lastModified,
       isSample: false,
+      // Carried through to the upload call. Without this the browser File is
+      // dropped here and the backend has nothing to read.
+      rawFile: file,
     };
 
     onFileSelect(uploadedBill);

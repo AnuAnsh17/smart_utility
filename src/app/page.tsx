@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AppStage, AnalysisResult } from '@/types/analysis';
+import { AlertCircle, RotateCcw } from 'lucide-react';
+import { AppStage, AnalysisResult, AnalysisMeta, LiveAnalysis } from '@/types/analysis';
 import { UploadedBillFile } from '@/types/bill';
 import { DashboardTab } from '@/components/layout/Sidebar';
 import { LandingPage } from '@/components/upload/LandingPage';
@@ -30,6 +31,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('dashboard');
   const [selectedFile, setSelectedFile] = useState<UploadedBillFile | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult>(MOCK_ANALYSIS_RESULT);
+  const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [showBillModal, setShowBillModal] = useState(false);
 
@@ -38,32 +41,37 @@ export default function Home() {
     setSelectedFile(file);
   };
 
+  // "Use a Sample Bill" is a demo affordance, and it now says so. It used to
+  // fabricate a file record and push it through the real processing screen,
+  // which meant a fabricated upload could masquerade as a genuine analysis.
   const handleUseSample = () => {
-    const sampleFile: UploadedBillFile = {
-      id: 'sample-oct-2024',
-      name: 'electricity_bill_october.pdf',
-      size: 1.2 * 1024 * 1024,
-      type: 'application/pdf',
-      isSample: true,
-    };
-    setSelectedFile(sampleFile);
-    setIsDemoMode(false);
-    setStage('processing');
+    void handleExploreSampleDashboard();
   };
 
   const handleStartAnalysis = () => {
+    if (!selectedFile?.rawFile) return;
     setIsDemoMode(false);
+    setFailureMessage(null);
     setStage('processing');
   };
 
-  const handleProcessingComplete = () => {
+  const handleProcessingComplete = (live: LiveAnalysis) => {
+    setAnalysisResult(live.result);
+    setAnalysisMeta(live.meta);
     setStage('complete');
+  };
+
+  const handleProcessingFailed = (message: string) => {
+    setFailureMessage(message);
+    setStage('failed');
   };
 
   const handleExploreSampleDashboard = async () => {
     setIsDemoMode(true);
+    setFailureMessage(null);
     const demoData = await analysisService.getSampleAnalysis();
     setAnalysisResult(demoData);
+    setAnalysisMeta(null);
     setStage('preparing_demo');
   };
 
@@ -80,7 +88,46 @@ export default function Home() {
   const handleExitDemo = () => {
     setIsDemoMode(false);
     setSelectedFile(null);
+    setAnalysisMeta(null);
+    setFailureMessage(null);
     setStage('landing');
+  };
+
+  // Exports the analysis the screen is already showing. It is built from the
+  // live result and job metadata rather than a canned document, so the file
+  // contains exactly the numbers on screen and nothing invented.
+  const handleDownloadReport = () => {
+    const payload = {
+      job_id: analysisMeta?.jobId ?? null,
+      generated_from: isDemoMode ? 'sample-data' : 'uploaded-bill',
+      bill: analysisResult.bill,
+      forecast: analysisResult.forecast,
+      weather: analysisResult.weather,
+      insights: analysisResult.insights,
+      recommendations: analysisResult.recommendations,
+      validation: analysisMeta
+        ? {
+            warnings: analysisMeta.warnings,
+            missing_fields: analysisMeta.missingFields,
+            detected_language: analysisMeta.detectedLanguage,
+            ocr_engine: analysisMeta.ocrEngine,
+            ocr_mean_confidence: analysisMeta.ocrMeanConfidence,
+            timings: analysisMeta.timings,
+          }
+        : null,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `bill-analysis-${analysisMeta?.jobId ?? 'sample'}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleQuickAction = (key: string) => {
@@ -114,10 +161,47 @@ export default function Home() {
           </motion.div>
         )}
 
-        {/* STAGE 2: PROCESSING SCREEN (Real Upload / Sample Bill) */}
-        {stage === 'processing' && (
+        {/* STAGE 2: PROCESSING SCREEN — real upload against the local backend */}
+        {stage === 'processing' && selectedFile?.rawFile && (
           <motion.div key="processing-stage">
-            <ProcessingScreen onComplete={handleProcessingComplete} />
+            <ProcessingScreen
+              key={selectedFile.id}
+              file={selectedFile.rawFile}
+              onComplete={handleProcessingComplete}
+              onFailed={handleProcessingFailed}
+            />
+          </motion.div>
+        )}
+
+        {/* STAGE 2b: ANALYSIS FAILED */}
+        {stage === 'failed' && (
+          <motion.div
+            key="failed-stage"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="min-h-screen bg-slate-50/60 flex items-center justify-center p-6 font-sans"
+          >
+            <div className="w-full max-w-md bg-white border border-slate-200/80 rounded-2xl p-7 shadow-md text-center">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-6 h-6 stroke-[2]" />
+              </div>
+              <h2 className="text-lg font-extrabold text-slate-900 mb-2">
+                We could not analyse this bill
+              </h2>
+              <p className="text-sm text-slate-500 leading-relaxed mb-6">
+                {failureMessage}
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleExitDemo}
+                  className="px-5 py-2.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Try another bill
+                </button>
+              </div>
+            </div>
           </motion.div>
         )}
 
@@ -133,6 +217,7 @@ export default function Home() {
           <motion.div key="complete-stage">
             <AnalysisComplete
               bill={analysisResult.bill}
+              meta={analysisMeta}
               onOpenDashboard={handleOpenDashboard}
             />
           </motion.div>
@@ -164,7 +249,7 @@ export default function Home() {
               {activeTab === 'dashboard' && (
                 <div className="space-y-6">
                   <DashboardHeader
-                    onDownloadReport={() => alert('Downloading official PDF analysis report...')}
+                    onDownloadReport={handleDownloadReport}
                     onAskAssistant={() => setActiveTab('assistant')}
                   />
 
@@ -179,6 +264,7 @@ export default function Home() {
                     <div className="lg:col-span-5">
                       <MonthlyConsumptionChart
                         data={analysisResult.forecast.historicalTrend}
+                        currencySymbol={analysisResult.bill.currencySymbol}
                       />
                     </div>
                     <div className="lg:col-span-4">
@@ -225,6 +311,7 @@ export default function Home() {
                     </p>
                     <MonthlyConsumptionChart
                       data={analysisResult.forecast.historicalTrend}
+                      currencySymbol={analysisResult.bill.currencySymbol}
                     />
                   </div>
                 </div>
@@ -232,7 +319,10 @@ export default function Home() {
 
               {/* TAB 3: FORECAST */}
               {activeTab === 'forecast' && (
-                <ForecastView forecast={analysisResult.forecast} />
+                <ForecastView
+                  forecast={analysisResult.forecast}
+                  currencySymbol={analysisResult.bill.currencySymbol}
+                />
               )}
 
               {/* TAB 4: SAVINGS */}
@@ -241,7 +331,16 @@ export default function Home() {
               )}
 
               {/* TAB 5: ASK ASSISTANT */}
-              {activeTab === 'assistant' && <AssistantPanel />}
+              {activeTab === 'assistant' && (
+                <AssistantPanel
+                  jobId={analysisMeta?.jobId ?? null}
+                  billLabel={
+                    analysisResult.bill.provider && analysisResult.bill.billingPeriod
+                      ? `${analysisResult.bill.provider}, ${analysisResult.bill.billingPeriod}`
+                      : analysisResult.bill.billingPeriod
+                  }
+                />
+              )}
 
               {/* TAB 6: DOCUMENTS */}
               {activeTab === 'documents' && (

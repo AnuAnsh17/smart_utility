@@ -1,62 +1,93 @@
 import { ChatMessage } from '../types/assistant';
+import { ApiError, sendChatMessage } from './apiClient';
 
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {
-    id: 'msg-welcome',
-    sender: 'assistant',
-    text: 'Hello! I am your Smart Utility AI Assistant. I have analyzed your Oct 2024 bill (352 kWh, ₹2,430). How can I help you understand your consumption or reduce your bill today?',
-    timestamp: 'Just now',
-    suggestedFollowups: [
-      'Why was my bill higher this month?',
-      'How can I reduce my bill?',
-      'What will my next bill be?',
-      'How does weather affect my bill?'
-    ]
-  }
-];
+/** Context the panel knows about from the analysis currently on screen. */
+export interface AssistantContext {
+  jobId: string | null;
+  /** e.g. "Tata Power, 01 Oct 2024 - 31 Oct 2024" — never a figure. */
+  billLabel: string | null;
+}
+
+const UNAVAILABLE =
+  'Could not reach the local analysis service. Is the backend running?';
 
 export class AssistantService {
-  private messages: ChatMessage[] = [...INITIAL_MESSAGES];
+  private sessionId: string | null = null;
 
-  getInitialMessages(): ChatMessage[] {
-    return this.messages;
-  }
-
-  async sendMessage(query: string): Promise<ChatMessage> {
-    const qLower = query.toLowerCase();
-    let replyText = '';
-    let suggestedFollowups: string[] = [];
-
-    if (qLower.includes('higher') || qLower.includes('increase') || qLower.includes('why')) {
-      replyText = 'Your October bill of ₹2,430 (352 kWh) was 12% higher than September. The main driver was Air Conditioning, accounting for 38% (133 kWh) of your usage due to persistent hot & humid ambient temperatures (28°C avg, 78% humidity).';
-      suggestedFollowups = ['Which appliances consume the most?', 'What will my next bill be?'];
-    } else if (qLower.includes('reduce') || qLower.includes('save') || qLower.includes('tips')) {
-      replyText = 'Here are 3 key actions to lower your monthly bill:\n\n1. **Reduce AC run-time by 1 hour daily** — saves ~₹350/month.\n2. **Set AC thermostat to 24°C instead of 18°C** — each degree higher saves ~6% electricity.\n3. **Switch to 5-Star inverter appliances** — reduces base load by up to 35%.';
-      suggestedFollowups = ['How much can I save on AC?', 'Show forecast for next month'];
-    } else if (qLower.includes('forecast') || qLower.includes('next')) {
-      replyText = 'Based on weather projections and historical patterns, your November 2024 bill is forecasted to be between **₹2,650 and ₹2,950** (~386 kWh).';
-      suggestedFollowups = ['Why is November higher?', 'How can I avoid the higher slab rate?'];
-    } else if (qLower.includes('weather')) {
-      replyText = 'Currently in Mumbai, conditions are **Hot & Humid (28°C, 78% humidity)**. Humidity causes air conditioner compressors to work longer to dehumidify indoor air, adding about 40–60 kWh to your monthly cooling load.';
-      suggestedFollowups = ['How can I lower AC energy during humidity?', 'Show consumption breakdown'];
-    } else if (qLower.includes('appliance') || qLower.includes('breakdown')) {
-      replyText = 'Appliance energy share for Oct 2024:\n- **AC**: 38% (133 kWh)\n- **Refrigerator**: 18% (63 kWh)\n- **Lighting**: 12% (42 kWh)\n- **Fans**: 10% (35 kWh)\n- **Other**: 22% (77 kWh)';
-      suggestedFollowups = ['Tips to optimize refrigerator', 'How to reduce lighting usage'];
-    } else {
-      replyText = `I have logged your question: "${query}". Based on your Oct 2024 bill analysis, your usage is 352 kWh (₹2,430). You are currently in tariff slab 301-500 kWh. Setting your AC to 24°C and turning off idle standby units will keep your next bill below ₹2,600.`;
-      suggestedFollowups = ['How can I reduce my bill?', 'Show forecast'];
+  /**
+   * The opening message.
+   *
+   * Deliberately carries no numbers: every figure the assistant states has to
+   * come back from the backend, which reads them out of the stored analysis.
+   */
+  getInitialMessages(context: AssistantContext): ChatMessage[] {
+    if (!context.jobId) {
+      return [
+        {
+          id: 'msg-welcome',
+          sender: 'assistant',
+          text:
+            'Upload an electricity bill and I can answer questions about your units, ' +
+            'charges, forecast, and how to reduce consumption. I only answer questions ' +
+            'about electricity bills and usage.',
+          timestamp: 'Just now',
+          suggestedFollowups: [],
+        },
+      ];
     }
 
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: 'assistant',
-      text: replyText,
-      timestamp: 'Just now',
-      suggestedFollowups
-    };
+    const subject = context.billLabel
+      ? `I have read your bill (${context.billLabel}).`
+      : 'I have read your bill.';
 
-    this.messages.push(newMsg);
-    return newMsg;
+    return [
+      {
+        id: 'msg-welcome',
+        sender: 'assistant',
+        text: `${subject} Ask about the units consumed, the charges, the next-month forecast, or how to bring it down.`,
+        timestamp: 'Just now',
+        suggestedFollowups: this.defaultFollowups(),
+      },
+    ];
+  }
+
+  private defaultFollowups(): string[] {
+    return [
+      'How many units did I use?',
+      'What will my next bill be?',
+      'Why is my bill high?',
+      'How can I reduce it?',
+    ];
+  }
+
+  async sendMessage(query: string, context: AssistantContext): Promise<ChatMessage> {
+    try {
+      const payload = await sendChatMessage({
+        message: query,
+        job_id: context.jobId,
+        session_id: this.sessionId,
+      });
+      this.sessionId = payload.session_id;
+
+      return {
+        id: `msg-${Date.now()}`,
+        sender: 'assistant',
+        text: payload.reply,
+        timestamp: 'Just now',
+        suggestedFollowups:
+          payload.suggested_followups.length > 0
+            ? payload.suggested_followups
+            : this.defaultFollowups(),
+      };
+    } catch (error) {
+      return {
+        id: `msg-${Date.now()}`,
+        sender: 'assistant',
+        text: error instanceof ApiError ? error.message : UNAVAILABLE,
+        timestamp: 'Just now',
+        suggestedFollowups: [],
+      };
+    }
   }
 }
 

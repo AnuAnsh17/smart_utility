@@ -12,25 +12,31 @@ import {
   Legend,
 } from 'recharts';
 import { ForecastData } from '@/types/forecast';
-import { Thermometer, CloudSun, Zap, AlertCircle } from 'lucide-react';
+import { Zap, AlertCircle } from 'lucide-react';
+import { formatAmount, orDash } from '@/lib/format';
 
 interface ForecastViewProps {
   forecast: ForecastData;
+  /** Taken from the bill so amounts render in the currency actually billed. */
+  currencySymbol: string;
 }
 
-export const ForecastView: React.FC<ForecastViewProps> = ({ forecast }) => {
+export const ForecastView: React.FC<ForecastViewProps> = ({ forecast, currencySymbol }) => {
+  const unreliable = forecast.reliable === false;
+
+  // Both series are consumption in kWh. The backend projects a single flat
+  // figure per future month, so the chart shows that figure rather than an
+  // invented kWh band derived from the rupee range.
   const chartData = [
     ...forecast.historicalTrend.map((h) => ({
       month: h.month,
       Historical: h.kwh,
-      ForecastMin: null,
-      ForecastMax: null,
+      Forecasted: null,
     })),
-    ...forecast.forecastTrend.slice(1).map((f) => ({
+    ...forecast.forecastTrend.map((f) => ({
       month: f.month,
       Historical: null,
-      ForecastMin: f.amountMin / 7, // approx kWh projection
-      ForecastMax: f.amountMax / 7,
+      Forecasted: f.kwh,
     })),
   ];
 
@@ -44,13 +50,14 @@ export const ForecastView: React.FC<ForecastViewProps> = ({ forecast }) => {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold mb-3 border border-emerald-500/30">
               <Zap className="w-3.5 h-3.5 fill-emerald-300" />
-              AI Predictive Forecast Engine
+              Predictive Forecast Engine
             </div>
             <h2 className="text-2xl md:text-4xl font-extrabold tracking-tight">
-              Next Month Forecast ({forecast.targetMonth})
+              Next Month Forecast ({orDash(forecast.targetMonth)})
             </h2>
             <p className="text-xs md:text-sm text-slate-300 mt-1">
-              Estimated bill range based on weather projections and historical tariff slabs.
+              Projected from the consumption periods on file, priced against the tariff slab
+              that applies to this connection.
             </p>
           </div>
 
@@ -59,10 +66,14 @@ export const ForecastView: React.FC<ForecastViewProps> = ({ forecast }) => {
               Expected Amount Range
             </div>
             <div className="text-2xl md:text-3xl font-extrabold text-white mt-0.5">
-              ₹{forecast.expectedAmountMin.toLocaleString('en-IN')} – ₹{forecast.expectedAmountMax.toLocaleString('en-IN')}
+              {unreliable
+                ? 'Not enough history'
+                : `${formatAmount(currencySymbol, forecast.expectedAmountMin)} – ${formatAmount(currencySymbol, forecast.expectedAmountMax)}`}
             </div>
             <div className="text-xs text-emerald-300 font-medium mt-1">
-              Expected usage: ~{forecast.expectedUnitsKwh} kWh
+              {unreliable
+                ? 'Upload earlier bills to enable a forecast'
+                : `Expected usage: ~${forecast.expectedUnitsKwh} kWh`}
             </div>
           </div>
         </div>
@@ -73,10 +84,10 @@ export const ForecastView: React.FC<ForecastViewProps> = ({ forecast }) => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-extrabold text-slate-900">
-              Historical Consumption vs 3-Month Forecast Range
+              Historical Consumption vs Projected Consumption
             </h3>
             <p className="text-xs text-slate-500">
-              Shaded values represent AI predictive upper and lower bounds.
+              Recorded months from your bills, followed by the projected figure.
             </p>
           </div>
         </div>
@@ -89,13 +100,13 @@ export const ForecastView: React.FC<ForecastViewProps> = ({ forecast }) => {
               <Tooltip
                 formatter={(val: any, name: string) => [
                   val ? `${Math.round(val)} kWh` : 'N/A',
-                  name === 'Historical' ? 'Actual kWh' : 'Forecasted kWh',
+                  name === 'Historical' ? 'Actual kWh' : 'Projected kWh',
                 ]}
                 contentStyle={{ backgroundColor: '#0F172A', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
               />
               <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
               <Bar dataKey="Historical" fill="#10B981" radius={[6, 6, 0, 0]} maxBarSize={40} name="Historical kWh" />
-              <Bar dataKey="ForecastMax" fill="#60A5FA" radius={[6, 6, 0, 0]} maxBarSize={40} name="Forecasted kWh (Upper)" />
+              <Bar dataKey="Forecasted" fill="#60A5FA" radius={[6, 6, 0, 0]} maxBarSize={40} name="Projected kWh" />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

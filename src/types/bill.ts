@@ -5,23 +5,33 @@ export interface UploadedBillFile {
   type: string;
   lastModified?: number;
   isSample?: boolean;
+  /**
+   * The original browser File, held in memory only until the upload completes.
+   * It is never serialised into state that reaches the dashboard.
+   */
+  rawFile?: File;
 }
 
+/**
+ * A field is nullable whenever the backend refuses to guess. A bill that did
+ * not state its previous reading comes back as `null` — not as 0, not as an
+ * estimate — so the UI renders a dash rather than a fabricated number.
+ */
 export interface BillData {
   id: string;
   fileName: string;
-  provider: string; // e.g. "Tata Power", "MSEDCL", "Adani Electricity"
-  consumerNumber: string;
-  billingPeriod: string; // e.g. "Oct 2024"
-  billDate: string;
-  dueDate: string;
-  previousReading: number;
-  currentReading: number;
-  unitsConsumed: number; // e.g. 352 kWh
+  provider: string | null; // e.g. "Tata Power", "MSEDCL", "Adani Electricity"
+  consumerNumber: string | null;
+  billingPeriod: string | null; // e.g. "Oct 2024"
+  billDate: string | null;
+  dueDate: string | null;
+  previousReading: number | null;
+  currentReading: number | null;
+  unitsConsumed: number | null; // e.g. 352 kWh
   unitLabel: string;
-  totalAmount: number; // e.g. 2430
+  totalAmount: number | null; // e.g. 2430
   currencySymbol: string; // e.g. "₹"
   language: string; // e.g. "English / Marathi"
-  meterType: string; // e.g. "Smart Digital Single Phase"
-  tariffCategory: string; // e.g. "LT-1 Residential"
+  meterType: string | null; // e.g. "Smart Digital Single Phase"
+  tariffCategory: string | null; // e.g. "LT-1 Residential"
 }

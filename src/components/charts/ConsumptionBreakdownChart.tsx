@@ -6,13 +6,32 @@ import { ApplianceBreakdown } from '@/types/forecast';
 
 interface ConsumptionBreakdownChartProps {
   data: ApplianceBreakdown[];
-  totalKwh: number;
+  /** Null when the bill did not state a units-consumed figure. */
+  totalKwh: number | null;
 }
 
 export const ConsumptionBreakdownChart: React.FC<ConsumptionBreakdownChartProps> = ({
   data,
   totalKwh,
 }) => {
+  if (data.length === 0) {
+    // Nothing to break down: the backend only emits a breakdown when it has a
+    // units figure to apportion, so an empty list is a real answer, not a gap
+    // to fill with a placeholder donut.
+    return (
+      <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col h-full font-sans">
+        <h3 className="text-base font-extrabold text-slate-900 mb-2">
+          Consumption Breakdown
+        </h3>
+        <div className="flex-1 flex items-center justify-center text-center py-10">
+          <p className="text-xs text-slate-400 max-w-[16rem] leading-relaxed">
+            No appliance breakdown available for this bill.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col justify-between h-full font-sans">
       <h3 className="text-base font-extrabold text-slate-900 mb-2">
@@ -54,7 +73,7 @@ export const ConsumptionBreakdownChart: React.FC<ConsumptionBreakdownChartProps>
           {/* Center Overlay Text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
             <span className="text-base font-extrabold text-slate-900 leading-none">
-              {totalKwh} kWh
+              {totalKwh != null ? `${totalKwh} kWh` : '—'}
             </span>
             <span className="text-[11px] font-semibold text-slate-400 mt-0.5">
               Total

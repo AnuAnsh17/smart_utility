@@ -4,23 +4,33 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Sparkles, User, Bot, Loader2 } from 'lucide-react';
 import { ChatMessage } from '@/types/assistant';
-import { assistantService } from '@/services/assistantService';
+import { assistantService, AssistantContext } from '@/services/assistantService';
 
-export const AssistantPanel: React.FC = () => {
+interface AssistantPanelProps {
+  /** The job currently on screen; answers are grounded on this analysis. */
+  jobId: string | null;
+  /** Provider and period of the loaded bill, for the opening line. */
+  billLabel: string | null;
+}
+
+export const AssistantPanel: React.FC<AssistantPanelProps> = ({ jobId, billLabel }) => {
+  const context: AssistantContext = { jobId, billLabel };
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
-    assistantService.getInitialMessages()
+    assistantService.getInitialMessages(context)
   );
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const SUGGESTED_QUESTIONS = [
-    'Why was my bill higher this month?',
-    'How can I reduce my bill?',
-    'What will my next bill be?',
-    'How does weather affect my bill?',
-    'Which appliances consume the most?'
-  ];
+  // Suggested chips come from the backend's own followups on the last reply;
+  // before the first exchange they mirror the questions the service offers.
+  const SUGGESTED_QUESTIONS: string[] = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const followups = messages[i].suggestedFollowups;
+      if (followups && followups.length > 0) return followups;
+    }
+    return [];
+  }, [messages]);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -45,11 +55,9 @@ export const AssistantPanel: React.FC = () => {
     if (!queryText) setInputText('');
     setIsTyping(true);
 
-    setTimeout(async () => {
-      const response = await assistantService.sendMessage(textToSend);
-      setMessages(prev => [...prev, response]);
-      setIsTyping(false);
-    }, 700);
+    const response = await assistantService.sendMessage(textToSend, context);
+    setMessages(prev => [...prev, response]);
+    setIsTyping(false);
   };
 
   return (

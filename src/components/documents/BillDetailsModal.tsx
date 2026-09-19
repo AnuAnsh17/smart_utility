@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { BillData } from '@/types/bill';
-import { X, FileText, Zap, Calendar, IndianRupee, ShieldCheck } from 'lucide-react';
+import { X, FileText } from 'lucide-react';
+import { orDash, formatAmount } from '@/lib/format';
 
 interface BillDetailsModalProps {
   bill: BillData;
@@ -21,7 +22,7 @@ export const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ bill, onClos
             </div>
             <div>
               <h3 className="text-lg font-extrabold text-slate-900">Extracted Bill Details</h3>
-              <p className="text-xs text-slate-400">{bill.fileName} • {bill.provider}</p>
+              <p className="text-xs text-slate-400">{bill.fileName} • {orDash(bill.provider)}</p>
             </div>
           </div>
           <button
@@ -42,15 +43,15 @@ export const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ bill, onClos
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[11px] font-semibold text-slate-400 block">Consumer No</span>
-                <span className="text-xs font-bold text-slate-900">{bill.consumerNumber}</span>
+                <span className="text-xs font-bold text-slate-900">{orDash(bill.consumerNumber)}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[11px] font-semibold text-slate-400 block">Billing Period</span>
-                <span className="text-xs font-bold text-slate-900">{bill.billingPeriod}</span>
+                <span className="text-xs font-bold text-slate-900">{orDash(bill.billingPeriod)}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[11px] font-semibold text-slate-400 block">Tariff Category</span>
-                <span className="text-xs font-bold text-slate-900">{bill.tariffCategory}</span>
+                <span className="text-xs font-bold text-slate-900">{orDash(bill.tariffCategory)}</span>
               </div>
             </div>
           </div>
@@ -63,41 +64,38 @@ export const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ bill, onClos
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
                 <span className="text-[11px] font-semibold text-emerald-800 block">Units Consumed</span>
-                <span className="text-sm font-extrabold text-emerald-900">{bill.unitsConsumed} kWh</span>
+                <span className="text-sm font-extrabold text-emerald-900">
+                  {bill.unitsConsumed != null ? `${bill.unitsConsumed} ${bill.unitLabel}` : '—'}
+                </span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[11px] font-semibold text-slate-400 block">Previous Reading</span>
-                <span className="text-xs font-bold text-slate-900">{bill.previousReading}</span>
+                <span className="text-xs font-bold text-slate-900">{orDash(bill.previousReading)}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[11px] font-semibold text-slate-400 block">Current Reading</span>
-                <span className="text-xs font-bold text-slate-900">{bill.currentReading}</span>
+                <span className="text-xs font-bold text-slate-900">{orDash(bill.currentReading)}</span>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Charges Breakdown */}
+          {/* Section 3: Amount Payable */}
           <div>
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-              Charges & Taxes
+              Amount Payable
             </h4>
             <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">Energy Charges (352 kWh @ slab rate)</span>
-                <span className="font-bold text-slate-900">₹1,840.00</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">Fixed / Demand Charge</span>
-                <span className="font-bold text-slate-900">₹220.00</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-600 font-medium">Electricity Duty & Taxes (16%)</span>
-                <span className="font-bold text-slate-900">₹370.00</span>
-              </div>
               <div className="flex justify-between py-2 font-extrabold text-sm text-slate-900 bg-slate-50 px-3 rounded-lg">
                 <span>Total Net Payable</span>
-                <span className="text-emerald-700">₹{bill.totalAmount.toLocaleString('en-IN')}</span>
+                <span className="text-emerald-700">
+                  {formatAmount(bill.currencySymbol, bill.totalAmount)}
+                </span>
               </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                The tariff components (energy, fixed/demand, duty) are recorded in the tariff
+                table for this bill. They are not itemised here because the bill document itself
+                does not break them out.
+              </p>
             </div>
           </div>
         </div>

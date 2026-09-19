@@ -3,15 +3,30 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Logo } from '@/components/brand/Logo';
-import { FileText, CheckCircle2, Zap, Calendar, IndianRupee, ArrowRight } from 'lucide-react';
+import { FileText, CheckCircle2, Zap, Calendar, IndianRupee, ArrowRight, Info } from 'lucide-react';
 import { BillData } from '@/types/bill';
+import { AnalysisMeta } from '@/types/analysis';
+import { orDash, formatAmount } from '@/lib/format';
 
 interface AnalysisCompleteProps {
   bill: BillData;
+  /** Null in demo mode, where nothing was actually parsed. */
+  meta?: AnalysisMeta | null;
   onOpenDashboard: () => void;
 }
 
-export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({ bill, onOpenDashboard }) => {
+export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({
+  bill,
+  meta,
+  onOpenDashboard,
+}) => {
+  const notices = [
+    ...(meta?.warnings ?? []),
+    ...(meta && meta.missingFields.length > 0
+      ? ['Some information could not be extracted.']
+      : []),
+  ];
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
@@ -105,7 +120,9 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({ bill, onOpen
             </div>
             <div>
               <div className="text-sm font-bold text-slate-900 leading-tight">
-                {bill.unitsConsumed} {bill.unitLabel}
+                {bill.unitsConsumed != null
+                  ? `${bill.unitsConsumed} ${bill.unitLabel}`
+                  : '—'}
               </div>
               <div className="text-[11px] text-slate-400 font-medium">
                 Units detected
@@ -120,7 +137,7 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({ bill, onOpen
             </div>
             <div>
               <div className="text-sm font-bold text-slate-900 leading-tight truncate">
-                {bill.billingPeriod}
+                {orDash(bill.billingPeriod)}
               </div>
               <div className="text-[11px] text-slate-400 font-medium">
                 Billing period
@@ -135,7 +152,7 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({ bill, onOpen
             </div>
             <div>
               <div className="text-sm font-bold text-slate-900 leading-tight">
-                {bill.currencySymbol}{bill.totalAmount.toLocaleString('en-IN')}
+                {formatAmount(bill.currencySymbol, bill.totalAmount)}
               </div>
               <div className="text-[11px] text-slate-400 font-medium">
                 Total amount
@@ -143,11 +160,33 @@ export const AnalysisComplete: React.FC<AnalysisCompleteProps> = ({ bill, onOpen
             </div>
           </div>
         </motion.div>
+
+        {/* Anything the backend flagged rather than guessed at. */}
+        {notices.length > 0 && (
+          <motion.ul
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="mt-6 max-w-md mx-auto text-left space-y-2"
+          >
+            {notices.map((notice) => (
+              <li
+                key={notice}
+                className="flex items-start gap-2.5 rounded-xl bg-amber-50/70 border border-amber-100 px-3.5 py-2.5"
+              >
+                <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span className="text-[12px] text-amber-900 leading-snug">{notice}</span>
+              </li>
+            ))}
+          </motion.ul>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="w-full max-w-5xl mx-auto text-center z-10 text-[12px] text-slate-400 py-2">
-        Instant bill OCR parsing completed successfully
+        {notices.length > 0
+          ? 'Bill parsed — review the notes above before relying on these figures'
+          : 'Bill OCR parsing completed successfully'}
       </footer>
     </motion.div>
   );

@@ -12,13 +12,41 @@ import {
 } from 'recharts';
 import { MonthlyConsumption } from '@/types/forecast';
 import { ChevronDown } from 'lucide-react';
+import { formatAmount } from '@/lib/format';
 
 interface MonthlyConsumptionChartProps {
   data: MonthlyConsumption[];
+  /** Taken from the bill so the tooltip shows the currency actually billed. */
+  currencySymbol: string;
 }
 
-export const MonthlyConsumptionChart: React.FC<MonthlyConsumptionChartProps> = ({ data }) => {
-  const [range, setRange] = useState<'6m' | '1y' | '3y'>('6m');
+type RangeKey = '6m' | '1y' | '3y';
+
+const RANGE_MONTHS: Record<RangeKey, number> = { '6m': 6, '1y': 12, '3y': 36 };
+
+/**
+ * Round the y-axis ceiling up to a clean step. A fixed ceiling clips any bill
+ * above it, which for a real upload means bars silently drawn past the top of
+ * the plot.
+ */
+function axisCeiling(peak: number): number {
+  if (!Number.isFinite(peak) || peak <= 0) return 100;
+  const magnitude = 10 ** Math.floor(Math.log10(peak));
+  for (const step of [1, 2, 2.5, 5, 10]) {
+    if (step * magnitude >= peak) return step * magnitude;
+  }
+  return 10 * magnitude;
+}
+
+export const MonthlyConsumptionChart: React.FC<MonthlyConsumptionChartProps> = ({
+  data,
+  currencySymbol,
+}) => {
+  const [range, setRange] = useState<RangeKey>('6m');
+
+  const visible = data.slice(-RANGE_MONTHS[range]);
+  const ceiling = axisCeiling(visible.reduce((max, d) => Math.max(max, d.kwh), 0));
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(ceiling * f));
 
   const customTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -30,7 +58,7 @@ export const MonthlyConsumptionChart: React.FC<MonthlyConsumptionChartProps> = (
             Consumption: {item.kwh} kWh
           </div>
           <div className="text-slate-400 text-[11px]">
-            Est. Cost: ₹{item.amount.toLocaleString('en-IN')}
+            Est. Cost: {formatAmount(currencySymbol, item.amount)}
           </div>
         </div>
       );
@@ -50,7 +78,7 @@ export const MonthlyConsumptionChart: React.FC<MonthlyConsumptionChartProps> = (
         <div className="relative">
           <select
             value={range}
-            onChange={(e) => setRange(e.target.value as any)}
+            onChange={(e) => setRange(e.target.value as RangeKey)}
             className="appearance-none bg-slate-50 border border-slate-200/90 rounded-lg pl-3 pr-7 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer outline-none"
           >
             <option value="6m">Last 6 Months</option>
@@ -64,7 +92,7 @@ export const MonthlyConsumptionChart: React.FC<MonthlyConsumptionChartProps> = (
       {/* Chart */}
       <div className="h-56 w-full mt-2">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <BarChart data={visible} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <XAxis
               dataKey="month"
               axisLine={false}
@@ -75,12 +103,12 @@ export const MonthlyConsumptionChart: React.FC<MonthlyConsumptionChartProps> = (
               axisLine={false}
               tickLine={false}
               tick={{ fill: '#94A3B8', fontSize: 11 }}
-              domain={[0, 500]}
-              ticks={[0, 100, 200, 300, 400, 500]}
+              domain={[0, ceiling]}
+              ticks={ticks}
             />
             <Tooltip content={customTooltip} cursor={{ fill: 'rgba(241, 245, 249, 0.6)' }} />
             <Bar dataKey="kwh" radius={[6, 6, 0, 0]} maxBarSize={38}>
-              {data.map((entry, index) => (
+              {visible.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}
                   fill={entry.isCurrent ? '#059669' : '#5EEAD4'}

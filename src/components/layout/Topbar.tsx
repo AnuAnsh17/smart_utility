@@ -6,15 +6,16 @@ import { Search, MapPin, Sun, Menu, LogOut, Sparkles } from 'lucide-react';
 interface TopbarProps {
   onOpenMobileMenu?: () => void;
   location?: string;
-  tempC?: number;
+  /** Null when the weather service is unavailable; the badge is then hidden. */
+  tempC?: number | null;
   isDemoMode?: boolean;
   onExitDemo?: () => void;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
   onOpenMobileMenu,
-  location = 'Mumbai, MH',
-  tempC = 28,
+  location,
+  tempC,
   isDemoMode = false,
   onExitDemo,
 }) => {
@@ -66,16 +67,20 @@ export const Topbar: React.FC<TopbarProps> = ({
         )}
 
         {/* Location Badge */}
-        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 shadow-2xs">
-          <MapPin className="w-3.5 h-3.5 text-slate-400" />
-          <span>{location}</span>
-        </div>
+        {location && (
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 shadow-2xs">
+            <MapPin className="w-3.5 h-3.5 text-slate-400" />
+            <span>{location}</span>
+          </div>
+        )}
 
-        {/* Weather Badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50/70 border border-amber-200/60 text-xs font-bold text-amber-800 shadow-2xs">
-          <Sun className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-          <span>{tempC}°C</span>
-        </div>
+        {/* Weather Badge — only when a real reading exists. */}
+        {tempC != null && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50/70 border border-amber-200/60 text-xs font-bold text-amber-800 shadow-2xs">
+            <Sun className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+            <span>{tempC}°C</span>
+          </div>
+        )}
 
         {/* Profile Avatar */}
         <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center shadow-sm cursor-pointer hover:ring-2 hover:ring-emerald-500/30 transition-all">

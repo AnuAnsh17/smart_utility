@@ -26,4 +26,10 @@ export interface ForecastData {
     description: string;
   }[];
   applianceBreakdown: ApplianceBreakdown[];
+  /**
+   * False when fewer than three periods are on file. The numbers above are
+   * still the honest output of the projection, but they are a single point
+   * rather than a trend, and the dashboard says so instead of hiding it.
+   */
+  reliable?: boolean;
 }
