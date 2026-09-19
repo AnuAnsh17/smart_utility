@@ -27,3 +27,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# backend runtime state — uploaded bills, extracted OCR text, the SQLite
+# database and per-job result files. These hold real household documents and
+# must never leave the machine they were uploaded on.
+backend/data/
+backend/.env
+
+# local scratch
+*.log
